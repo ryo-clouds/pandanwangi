@@ -48,7 +48,13 @@ export class WhatsAppBot {
                     '--disable-accelerated-2d-canvas',
                     '--no-first-run',
                     '--no-zygote',
-                    '--disable-gpu'
+                    '--disable-gpu',
+                    // Memory optimization flags
+                    '--single-process',
+                    '--disable-extensions',
+                    '--disable-software-rasterizer',
+                    '--disable-features=site-per-process',
+                    '--js-flags=--max-old-space-size=256'
                 ]
             },
             // Use remote web version cache for compatibility
