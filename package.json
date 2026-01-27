@@ -1,0 +1,17 @@
+{
+  "name": "ai-agent-js",
+  "version": "1.0.0",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "start:server": "cd server && npm start",
+    "start:client": "cd client && npm run dev",
+    "setup": "npm install && cd server && npm install && cd ../client && npm install",
+    "dev": "concurrently \"npm run start:server\" \"npm run start:client\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

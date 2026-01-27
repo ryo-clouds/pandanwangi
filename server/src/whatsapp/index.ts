@@ -1,0 +1,1 @@
+export { WhatsAppBot } from './bot';

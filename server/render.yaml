@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: ai-agent-server
+    runtime: docker
+    region: singapore
+    plan: starter # $7/bulan - persistent service
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: WHATSAPP_ENABLED
+        value: "true"
+      - key: WHATSAPP_ALLOWED_NUMBERS
+        sync: false
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /usr/bin/chromium
+    disk:
+      name: whatsapp-data
+      mountPath: /app/data
+      sizeGB: 1
