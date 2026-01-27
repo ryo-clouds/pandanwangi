@@ -1,5 +1,8 @@
 FROM node:20-slim AS builder
 
+# Install git for npm packages from GitHub
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy package files
@@ -17,8 +20,9 @@ RUN npm run build
 # Production stage
 FROM node:20-slim
 
-# Install Chrome dependencies
+# Install git and Chrome dependencies
 RUN apt-get update && apt-get install -y \
+    git \
     chromium \
     fonts-liberation \
     libappindicator3-1 \
