@@ -1,7 +1,12 @@
 FROM node:20-slim AS builder
 
-# Install git for npm packages from GitHub
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install git and build tools for native modules (hnswlib-node needs node-gyp)
+RUN apt-get update && apt-get install -y \
+    git \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -20,9 +25,12 @@ RUN npm run build
 # Production stage
 FROM node:20-slim
 
-# Install git and Chrome dependencies
+# Install git, build tools and Chrome dependencies
 RUN apt-get update && apt-get install -y \
     git \
+    python3 \
+    make \
+    g++ \
     chromium \
     fonts-liberation \
     libappindicator3-1 \
