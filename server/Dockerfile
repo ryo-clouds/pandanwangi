@@ -1,3 +1,20 @@
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install ALL dependencies (including devDependencies for build)
+RUN npm install
+
+# Copy source files
+COPY . .
+
+# Build TypeScript
+RUN npm run build
+
+# Production stage
 FROM node:20-slim
 
 # Install Chrome dependencies
@@ -32,14 +49,11 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install production dependencies only
+RUN npm install --omit=dev
 
-# Copy source files
-COPY . .
-
-# Build TypeScript
-RUN npm run build
+# Copy built files from builder stage
+COPY --from=builder /app/dist ./dist
 
 # Create data directory for WhatsApp session
 RUN mkdir -p /app/data/whatsapp_auth
