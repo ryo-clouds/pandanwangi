@@ -25,12 +25,8 @@ RUN npm run build
 # Production stage
 FROM node:20-slim
 
-# Install git, build tools and Chrome dependencies
+# Install Chrome dependencies only (no need for build tools)
 RUN apt-get update && apt-get install -y \
-    git \
-    python3 \
-    make \
-    g++ \
     chromium \
     fonts-liberation \
     libappindicator3-1 \
@@ -58,11 +54,11 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
-# Copy package files
+# Copy package.json for npm start
 COPY package*.json ./
 
-# Install production dependencies only
-RUN npm install --omit=dev --legacy-peer-deps
+# Copy node_modules from builder (avoid reinstalling and git issues)
+COPY --from=builder /app/node_modules ./node_modules
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist ./dist
