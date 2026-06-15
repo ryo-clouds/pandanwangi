@@ -2,8 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { config } from './config';
-import { processPdf } from './rag/loader';
+import { processPdf, triggerSummaryGeneration } from './rag/loader';
 import { askQuestion, askQuestionStream } from './rag/chain';
+import { getCacheStats, contextCache, clearResponseCache } from './rag/cache';
+import { deleteDocumentSummary, generateDocumentSummary } from './rag/summarizer';
 import fs from 'fs';
 import { 
     saveMessage, 
@@ -16,7 +18,14 @@ import {
     deleteDocument,
     toggleDocumentStatus,
     deleteSession,
+    flushVectorStore,
 } from './lib/database';
+import { 
+    getAnalyticsStats, 
+    getTopQuestions, 
+    getDailyActivity, 
+    getRecentQuestions 
+} from './lib/analytics';
 import { uploadToStorage, getPublicUrl } from './lib/supabase';
 import { authenticateToken, generateToken } from './middleware/auth';
 import { apiLimiter, authLimiter, chatLimiter } from './middleware/limiter';
@@ -27,7 +36,7 @@ const app = express();
 // Enable CORS for Client
 app.use(cors({
     origin: '*',
-    methods: ['GET', 'POST', 'DELETE']
+    methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT']
 }));
 
 app.use(express.json());
@@ -139,6 +148,70 @@ app.patch('/api/documents/:id/toggle', authenticateToken, async (req, res): Prom
     }
 });
 
+// Flush all vector chunks
+app.delete('/api/vectors/flush', authenticateToken, async (req, res): Promise<any> => {
+    try {
+        const result = await flushVectorStore();
+        // Also clear CAG caches when vectors are flushed
+        contextCache.clear();
+        await clearResponseCache();
+        res.json({ message: `Flushed ${result.deleted} vector chunks + CAG caches`, deleted: result.deleted });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ============ CAG CACHE ENDPOINTS ============
+
+// Get cache statistics
+app.get('/api/cache/stats', authenticateToken, async (req, res): Promise<any> => {
+    try {
+        const stats = await getCacheStats();
+        res.json(stats);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Flush all caches
+app.delete('/api/cache/flush', authenticateToken, async (req, res): Promise<any> => {
+    try {
+        const contextCleared = contextCache.clear();
+        const responseCleared = await clearResponseCache();
+        res.json({ 
+            message: 'All CAG caches flushed',
+            contextCacheCleared: contextCleared,
+            responseCacheCleared: responseCleared
+        });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Re-generate document summary
+app.post('/api/documents/:id/resummarize', authenticateToken, async (req, res): Promise<any> => {
+    try {
+        const { id } = req.params;
+        const docs = await getDocuments();
+        const doc = docs.find((d: any) => d.id === id);
+        if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+        // Fetch document chunks to get text
+        const { supabase } = await import('./lib/supabase');
+        const { data: chunks } = await supabase
+            .from('document_chunks')
+            .select('content')
+            .contains('metadata', { source: doc.storage_path || doc.filename });
+
+        const fullText = chunks?.map((c: any) => c.content).join('\n') || doc.filename;
+        const result = await generateDocumentSummary(id as string, fullText, doc.filename);
+        
+        res.json({ message: 'Summary regenerated', ...result });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Re-index Document (Fix 0-chunk issues)
 app.post('/api/documents/:id/reindex', authenticateToken, async (req, res): Promise<any> => {
     try {
@@ -224,22 +297,39 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
         const result = await processPdf(req.file.buffer, publicUrl, req.file.originalname);
         
         // 3. Save document metadata to database
+        let savedDocId: string | undefined;
         try {
-            await saveDocument(
+            const saved = await saveDocument(
                 req.file.originalname,
                 storagePath,
                 result.chunks,
                 result.pages
             );
+            savedDocId = saved?.id;
         } catch (dbError) {
              console.warn("Saving to database failed, but indexing succeeded:", dbError);
         }
         
+        // 4. CAG: Trigger summary generation asynchronously (non-blocking)
+        if (savedDocId && result.success) {
+            // Get document text for summary (use first chunks)
+            const { supabase } = await import('./lib/supabase');
+            const { data: chunks } = await supabase
+                .from('document_chunks')
+                .select('content')
+                .contains('metadata', { source: publicUrl })
+                .limit(10);
+            
+            const sampleText = chunks?.map((c: any) => c.content).join('\n') || req.file.originalname;
+            triggerSummaryGeneration(savedDocId, sampleText, req.file.originalname).catch(() => {});
+        }
+
         return res.json({ 
             message: "File ingested successfully (Direct Upload)", 
             filename: req.file.originalname,
             stats: result,
-            url: publicUrl
+            url: publicUrl,
+            cag: savedDocId ? 'summary_generating' : 'skipped'
         });
     } catch (e: any) {
         console.error("Upload error:", e);
@@ -300,6 +390,46 @@ app.post('/api/chat', chatLimiter as any, async (req, res): Promise<any> => {
 });
 
 
+// ============ ANALYTICS (Admin Only) ============
+
+app.get('/api/analytics/stats', authenticateToken, async (req, res) => {
+    try {
+        const stats = await getAnalyticsStats();
+        res.json(stats);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/analytics/top-questions', authenticateToken, async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit as string) || 10;
+        const questions = await getTopQuestions(limit);
+        res.json(questions);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/analytics/daily-activity', authenticateToken, async (req, res) => {
+    try {
+        const days = parseInt(req.query.days as string) || 7;
+        const activity = await getDailyActivity(days);
+        res.json(activity);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/analytics/recent-questions', authenticateToken, async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit as string) || 20;
+        const questions = await getRecentQuestions(limit);
+        res.json(questions);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 
 app.listen(config.port, () => {

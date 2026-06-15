@@ -157,13 +157,13 @@ export default function ChatArea() {
       <div className="chat-header">
         <div className="chat-title-group">
             <button 
-              className="md-hidden mr-2 p-1 text-slate-500 hover:bg-slate-100 rounded"
+              className="md-hidden mobile-menu-btn"
               onClick={toggleMobileSidebar}
             >
               <Menu size={24} />
             </button>
             <div className="chat-icon-box" style={{ background: 'transparent' }}>
-                <img src="/cianjur.svg" alt="Logo" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
+                <img src="/logo.png" alt="Logo" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
             </div>
             <div className="chat-title-info">
                 <span className="chat-title">Pandan Wangi</span>

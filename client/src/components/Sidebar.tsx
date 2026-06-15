@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, NavLink, useLocation } from 'react-router-dom';
-import { Database, LogIn, LogOut, MessageSquarePlus, History as HistoryIcon, PanelLeft, PanelRight, FileText, Trash2 } from 'lucide-react';
+import { Database, LogIn, LogOut, MessageSquarePlus, History as HistoryIcon, PanelLeft, PanelRight, FileText, Trash2, BarChart3, BookOpen } from 'lucide-react';
 import { getSessions, deleteSession } from '../lib/api';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
@@ -71,19 +71,13 @@ export default function Sidebar({ className, mobileOpen, onMobileClose }: Sideba
         onCancel={confirmModal.handleCancel}
       />
       
-      {/* Mobile Backdrop */}
-      {mobileOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-20 md:hidden"
-          onClick={onMobileClose}
-        />
-      )}
+      {/* Mobile Backdrop handled in App.tsx overlay */}
       
       <aside className={clsx("sidebar", isCollapsed && "collapsed", mobileOpen && "mobile-open", className)}>
       {/* Brand Header */}
       <div className="sidebar-header">
         <div className="brand-icon">
-          <img src="/cianjur.svg" alt="Logo Cianjur" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          <img src="/logo.png" alt="Logo Cianjur" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
         <div className="brand-text">
           <span className="brand-name">PANDAN WANGI</span>
@@ -147,6 +141,28 @@ export default function Sidebar({ className, mobileOpen, onMobileClose }: Sideba
                 </>
               )}
             </NavLink>
+            <NavLink 
+              to="/admin/analytics"
+              className={({ isActive }: { isActive: boolean }) => clsx("nav-link", isActive && "active")}
+            >
+              {() => (
+                <>
+                  <BarChart3 size={18} className="nav-icon" />
+                  <span>Laporan Penggunaan</span>
+                </>
+              )}
+            </NavLink>
+            <NavLink 
+              to="/admin/pedoman"
+              className={({ isActive }: { isActive: boolean }) => clsx("nav-link", isActive && "active")}
+            >
+              {() => (
+                <>
+                  <BookOpen size={18} className="nav-icon" />
+                  <span>Pedoman Teknis</span>
+                </>
+              )}
+            </NavLink>
           </>
         )}
       </div>
@@ -161,7 +177,20 @@ export default function Sidebar({ className, mobileOpen, onMobileClose }: Sideba
                   <div key={i} className="skeleton" style={{ height: '28px', width: '100%', opacity: 0.6 }} />
                 ))}
             </div>
-        ) : sessions.map((session) => (
+        ) : sessions.map((session) => {
+          // Format title: replace phone numbers with context or 'Chat WhatsApp'
+          const formatTitle = (title: string) => {
+            // Check if title looks like a phone number (only digits, or starts with WA:)
+            const isPhoneNumber = /^(WA:\s*)?[\d]+$/.test(title.trim());
+            if (isPhoneNumber) {
+              return 'Chat WhatsApp';
+            }
+            // Remove WA: prefix if present
+            return title.replace(/^WA:\s*/i, '');
+          };
+          const displayTitle = formatTitle(session.title);
+          
+          return (
           <div key={session.id} className="history-item-wrapper">
             <NavLink 
                 to={`/chat/${session.id}`}
@@ -169,21 +198,21 @@ export default function Sidebar({ className, mobileOpen, onMobileClose }: Sideba
                     "history-item",
                     isActive && "active"
                 )}
-                title={session.title}
+                title={displayTitle}
             >
                 <HistoryIcon size={14} style={{ opacity: 0.5, flexShrink: 0 }}/>
-                <span className="history-text">{session.title}</span>
+                <span className="history-text">{displayTitle}</span>
             </NavLink>
             
             <button 
-                onClick={(e) => handleDeleteSession(e, session.id, session.title)}
+                onClick={(e) => handleDeleteSession(e, session.id, displayTitle)}
                 className="history-delete-btn"
                 title="Hapus Percakapan"
             >
                 <Trash2 size={14} />
             </button>
           </div>
-        ))}
+        )})}
       </nav>
 
       {/* User Footer */}

@@ -113,26 +113,90 @@ export const getHybridRetriever = async () => {
     };
 };
 
-export const addDocuments = async (docs: any[]) => {
+// Helper function for delay
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+export const addDocuments = async (docs: any[], onProgress?: (current: number, total: number) => void) => {
     let store = await getVectorStore();
     
-    // Create new store/add documents
+    const BATCH_SIZE = 20; // Process 20 chunks at a time
+    const DELAY_MS = 2000; // 2 second delay between batches
+    const totalDocs = docs.length;
+    
+    console.log(`📄 Processing ${totalDocs} chunks in batches of ${BATCH_SIZE}...`);
+    
+    // Create new store/add documents in batches
     if (store) {
-        await store.addDocuments(docs);
+        for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+            const batch = docs.slice(i, i + BATCH_SIZE);
+            const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+            const totalBatches = Math.ceil(docs.length / BATCH_SIZE);
+            
+            console.log(`📦 Batch ${batchNum}/${totalBatches}: Processing ${batch.length} chunks...`);
+            
+            try {
+                await store.addDocuments(batch);
+                console.log(`✅ Batch ${batchNum}/${totalBatches} complete`);
+                
+                // Report progress
+                if (onProgress) {
+                    onProgress(Math.min(i + BATCH_SIZE, totalDocs), totalDocs);
+                }
+                
+                // Add delay between batches to avoid rate limiting (except for last batch)
+                if (i + BATCH_SIZE < docs.length) {
+                    console.log(`⏳ Waiting ${DELAY_MS}ms before next batch...`);
+                    await delay(DELAY_MS);
+                }
+            } catch (error: any) {
+                console.error(`❌ Batch ${batchNum} failed:`, error.message);
+                
+                // Retry with smaller batch on failure
+                if (BATCH_SIZE > 5) {
+                    console.log(`🔄 Retrying batch ${batchNum} with smaller chunks...`);
+                    const RETRY_BATCH_SIZE = 5;
+                    
+                    for (let j = 0; j < batch.length; j += RETRY_BATCH_SIZE) {
+                        const smallBatch = batch.slice(j, j + RETRY_BATCH_SIZE);
+                        try {
+                            await store.addDocuments(smallBatch);
+                            console.log(`   ✅ Sub-batch ${Math.floor(j / RETRY_BATCH_SIZE) + 1} complete`);
+                            await delay(3000); // Longer delay for retry
+                        } catch (retryError: any) {
+                            console.error(`   ❌ Sub-batch failed:`, retryError.message);
+                            throw retryError; // Give up after retry
+                        }
+                    }
+                } else {
+                    throw error;
+                }
+            }
+        }
     } else {
-        // Fallback (should typically use existing index)
-        store = await SupabaseVectorStore.fromDocuments(docs, embeddings, {
+        // Fallback - create new store with first batch only
+        const firstBatch = docs.slice(0, BATCH_SIZE);
+        store = await SupabaseVectorStore.fromDocuments(firstBatch, embeddings, {
             client: supabase,
             tableName: "document_chunks",
             queryName: "match_documents",
         });
         vectorStore = store;
+        
+        // Add remaining docs
+        if (docs.length > BATCH_SIZE) {
+            const remaining = docs.slice(BATCH_SIZE);
+            for (let i = 0; i < remaining.length; i += BATCH_SIZE) {
+                const batch = remaining.slice(i, i + BATCH_SIZE);
+                console.log(`📦 Adding batch ${Math.floor(i / BATCH_SIZE) + 2}...`);
+                await store.addDocuments(batch);
+                await delay(DELAY_MS);
+            }
+        }
     }
     
+    console.log(`🎉 All ${totalDocs} chunks processed successfully!`);
+    
     // Rebuild BM25 immediately after adding documents
-    // In production, this might be async or scheduled
-    // For now, we reuse the loading logic or just update local instance if possible
-    // Simpler to just re-load for consistency
     await loadStores();
     
     return store;

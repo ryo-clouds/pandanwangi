@@ -197,28 +197,68 @@ export const getDocuments = async () => {
 };
 
 export const deleteDocument = async (id: string, storagePath: string) => {
-    // 1. Delete from DB
+    // 1. First get the document to find its source URL
+    const { data: doc, error: fetchError } = await supabase
+        .from('documents')
+        .select('source_url, filename')
+        .eq('id', id)
+        .single();
+    
+    if (fetchError) {
+        console.error("Error fetching document for deletion:", fetchError);
+    }
+    
+    // 2. Delete vector chunks that match this document's source
+    if (doc?.source_url) {
+        console.log(`🗑️ Deleting vector chunks for source: ${doc.source_url}`);
+        
+        // Delete chunks where metadata->source matches
+        const { error: chunksError, count } = await supabase
+            .from('document_chunks')
+            .delete({ count: 'exact' })
+            .eq('metadata->>source', doc.source_url);
+        
+        if (chunksError) {
+            console.error("Error deleting vector chunks:", chunksError);
+        } else {
+            console.log(`✅ Deleted ${count || 0} vector chunks`);
+        }
+    }
+    
+    // 3. Delete from documents table
     const { error } = await supabase
         .from('documents')
         .delete()
         .eq('id', id);
     
     if (error) throw error;
+    
+    console.log(`✅ Document ${doc?.filename || id} deleted successfully`);
 
-    // 2. Delete from Storage (Optional - requires permissions)
+    // 4. Delete from Storage (Optional - requires permissions)
     // await supabase.storage.from('pdfs').remove([storagePath]);
 };
 
 export const toggleDocumentStatus = async (id: string, isActive: boolean) => {
+    console.log(`Toggling document ${id} to ${isActive}`);
+    
     const { data, error } = await supabase
         .from('documents')
         .update({ is_active: isActive })
         .eq('id', id)
-        .select()
-        .single();
+        .select();
     
-    if (error) throw error;
-    return data;
+    if (error) {
+        console.error('Toggle document error:', error);
+        throw error;
+    }
+    
+    if (!data || data.length === 0) {
+        throw new Error(`Document with id ${id} not found`);
+    }
+    
+    console.log('Toggle success:', data[0]);
+    return data[0];
 };
 
 export const getActiveDocuments = async (): Promise<string[]> => {
@@ -235,4 +275,29 @@ export const getActiveDocuments = async (): Promise<string[]> => {
     // We might need to match partially or strict. 
     // For now let's just use filenames or storage paths.
     return data.map(d => d.filename); 
+};
+
+// Flush all vector chunks from document_chunks table
+export const flushVectorStore = async () => {
+    console.log('🗑️ Flushing all vector chunks...');
+    
+    // Get count first
+    const { count: totalCount } = await supabase
+        .from('document_chunks')
+        .select('*', { count: 'exact', head: true });
+    
+    // Delete all chunks - Supabase requires a filter, so we use a trick
+    // Delete where id is not null (which is all rows)
+    const { error, count } = await supabase
+        .from('document_chunks')
+        .delete({ count: 'exact' })
+        .not('id', 'is', null);
+    
+    if (error) {
+        console.error('Error flushing vector store:', error);
+        throw error;
+    }
+    
+    console.log(`✅ Flushed ${count || totalCount || 0} vector chunks`);
+    return { deleted: count || totalCount || 0 };
 };

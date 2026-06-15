@@ -5,7 +5,9 @@ import Sidebar from './components/Sidebar';
 import HomePage from './pages/HomePage';
 import RagPage from './pages/RagPage';
 import DocumentsPage from './pages/DocumentsPage';
+import AnalyticsPage from './pages/AnalyticsPage';
 import LoginPage from './pages/LoginPage';
+import PedomanTeknisPage from './pages/PedomanTeknisPage';
 
 const queryClient = new QueryClient();
 
@@ -50,6 +52,22 @@ function AppRoutes() {
           </ProtectedRoute>
         } 
       />
+      <Route 
+        path="/admin/analytics" 
+        element={
+          <ProtectedRoute>
+            <AnalyticsPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/admin/pedoman" 
+        element={
+          <ProtectedRoute>
+            <PedomanTeknisPage />
+          </ProtectedRoute>
+        } 
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -87,6 +105,10 @@ function AppLayout() {
           isAdmin={isAdmin} 
           mobileOpen={isMobileSidebarOpen}
           onMobileClose={closeMobileSidebar}
+        />
+        <div 
+          className={`sidebar-overlay ${isMobileSidebarOpen ? 'mobile-open' : ''}`} 
+          onClick={closeMobileSidebar}
         />
         <main className="main-content">
           <AppRoutes />

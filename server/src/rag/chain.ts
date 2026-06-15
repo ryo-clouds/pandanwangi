@@ -3,6 +3,8 @@ import { config } from "../config";
 import { getHybridRetriever } from "./vector";
 import { getSessionMessages, getMemories } from "../lib/database";
 import { Document } from "@langchain/core/documents"; // Ensure type present
+import { hashQuery, contextCache, getResponseCache, saveResponseCache } from "./cache";
+import { getAllDocumentSummaries } from "./summarizer";
 
 const client = new InferenceClient(config.hfToken);
 
@@ -138,11 +140,11 @@ Ingat: Kamu sedang chatting di WhatsApp, bukan bikin laporan formal!`;
             max_tokens: 1000 // Shorter for WhatsApp
         });
         
-        const answer = response.choices[0]?.message?.content || "Maaf, aku nggak bisa jawab sekarang 🙏";
+        let answer = response.choices[0]?.message?.content || "Maaf, aku nggak bisa jawab sekarang 🙏";
         
         const sources = finalDocs.map((doc: any) => ({
             page: doc.metadata.pageNumber ?? '?',
-            source: doc.metadata.source ?? 'Unknown'
+            source: doc.metadata.source ?? doc.metadata.filename ?? 'Unknown'
         }));
         
         return { answer, sources };
@@ -161,71 +163,107 @@ export const askQuestionStream = async function* (question: string, sessionId?: 
     console.log(`[askQuestionStream] Starting for query: "${question}"`);
     
     try {
-        const retriever = await getHybridRetriever();
-        
-        // 1. Retrieve & Context (Same as before)
-        console.log(`Retrieving context (Hybrid Mode) for: ${question}`);
-        let allDocs: Document[] = [];
+        // ===== CAG Layer 3: Response Cache Check =====
+        const queryHash = hashQuery(question);
+        const cachedResponse = await getResponseCache(queryHash);
+
+        if (cachedResponse) {
+            console.log(`⚡ [CAG] Full response cache HIT — returning instantly`);
+            yield JSON.stringify({ type: 'sources', data: cachedResponse.sources });
+            yield JSON.stringify({ type: 'content', data: cachedResponse.response });
+            yield JSON.stringify({ type: 'cag_info', data: { cached: true, layer: 'response' } });
+            return;
+        }
+
+        // Precompute comparison check (needed outside cache block)
         const isComparison = isComparisonQuery(question);
         const mentionedYears = extractYearsFromQuestion(question);
-        
-        if (isComparison && mentionedYears.length > 0) {
-            for (const year of mentionedYears) {
-                const yearDocs = await retriever.invoke(`${question} tahun ${year}`, 25);
-                allDocs.push(...yearDocs);
-            }
-            const generalDocs = await retriever.invoke(question, 30);
-            allDocs.push(...generalDocs);
+
+        // ===== CAG Layer 2: Context Cache Check =====
+        let finalDocs: Document[] = [];
+        let contextFromCache = false;
+        const cachedContext = contextCache.get(queryHash);
+
+        if (cachedContext) {
+            console.log(`🎯 [CAG] Context cache HIT — skipping vector search`);
+            finalDocs = cachedContext.docs;
+            contextFromCache = true;
         } else {
-            // Broad search to satisfy "read all documents" request
-            allDocs = await retriever.invoke(question, 50);
-        }
+            // Full retrieval pipeline (original RAG)
+            const retriever = await getHybridRetriever();
+            console.log(`Retrieving context (Hybrid Mode) for: ${question}`);
+            let allDocs: Document[] = [];
         
-        console.log(`[askQuestionStream] Retrieved ${allDocs.length} raw documents.`);
-        
-        // Deduplicate by Content
-        let uniqueDocs = Array.from(new Set(allDocs.map(d => d.pageContent)))
-            .map(content => allDocs.find(d => d.pageContent === content))
-            .filter((d): d is Document => d !== undefined);
-            
-        // Prioritize Diversity: Ensure we don't just fill up with 10 chunks from same file
-        const seenFiles = new Set<string>();
-        const diverseDocs: Document[] = [];
-        const remainingDocs: Document[] = [];
-        
-        // First pass: 1 chunk per file
-        uniqueDocs.forEach(doc => {
-            const source = doc.metadata.source || doc.metadata.filename;
-            if (!seenFiles.has(source)) {
-                diverseDocs.push(doc);
-                seenFiles.add(source);
+            if (isComparison && mentionedYears.length > 0) {
+                for (const year of mentionedYears) {
+                    const yearDocs = await retriever.invoke(`${question} tahun ${year}`, 25);
+                    allDocs.push(...yearDocs);
+                }
+                const generalDocs = await retriever.invoke(question, 30);
+                allDocs.push(...generalDocs);
             } else {
-                remainingDocs.push(doc);
+                // Broad search to satisfy "read all documents" request
+                allDocs = await retriever.invoke(question, 50);
             }
-        });
+            
+            console.log(`[askQuestionStream] Retrieved ${allDocs.length} raw documents.`);
+            
+            // Deduplicate by Content
+            const uniqueDocs = Array.from(new Set(allDocs.map(d => d.pageContent)))
+                .map(content => allDocs.find(d => d.pageContent === content))
+                .filter((d): d is Document => d !== undefined);
+                
+            // Prioritize Diversity: Ensure we don't just fill up with 10 chunks from same file
+            const seenFiles = new Set<string>();
+            const diverseDocs: Document[] = [];
+            const remainingDocs: Document[] = [];
+            
+            // First pass: 1 chunk per file
+            uniqueDocs.forEach(doc => {
+                const source = doc.metadata.source || doc.metadata.filename;
+                if (!seenFiles.has(source)) {
+                    diverseDocs.push(doc);
+                    seenFiles.add(source);
+                } else {
+                    remainingDocs.push(doc);
+                }
+            });
         
-        // Fill up to 15 with remaining best matches
-        const finalDocs = [...diverseDocs, ...remainingDocs].slice(0, 15);
+            // Fill up to 15 with remaining best matches
+            finalDocs = [...diverseDocs, ...remainingDocs].slice(0, 15);
 
-        // === VERBOSE LOGGING FOR DEBUGGING ===
-        console.log(`\n=== RETRIEVAL DEBUG ===`);
-        console.log(`Query: "${question}"`);
-        console.log(`Total docs retrieved: ${allDocs.length}`);
-        console.log(`Unique docs: ${uniqueDocs.length}`);
-        console.log(`Final docs to use: ${finalDocs.length}`);
-        console.log(`Docs by filename:`);
-        finalDocs.forEach((doc, i) => {
-            const filename = doc.metadata?.filename || 'unknown';
-            const preview = doc.pageContent?.substring(0, 100).replace(/\n/g, ' ') || 'no content';
-            console.log(`  ${i + 1}. [${filename}] "${preview}..."`);
-        });
-        console.log(`=== END DEBUG ===\n`);
+            // === VERBOSE LOGGING FOR DEBUGGING ===
+            console.log(`\n=== RETRIEVAL DEBUG ===`);
+            console.log(`Query: "${question}"`);
+            console.log(`Total docs retrieved: ${allDocs.length}`);
+            console.log(`Unique docs: ${uniqueDocs.length}`);
+            console.log(`Final docs to use: ${finalDocs.length}`);
+            console.log(`Docs by filename:`);
+            finalDocs.forEach((doc, i) => {
+                const filename = doc.metadata?.filename || 'unknown';
+                const preview = doc.pageContent?.substring(0, 100).replace(/\n/g, ' ') || 'no content';
+                console.log(`  ${i + 1}. [${filename}] "${preview}..."`);
+            });
+            console.log(`=== END DEBUG ===\n`);
 
-        const context = finalDocs.map(d => {
-            const yearLabel = d.metadata?.year ? `[Tahun ${d.metadata.year}] ` : '';
-            const pageLabel = d.metadata?.pageNumber ? `(Page ${d.metadata.pageNumber}) ` : '';
-            return `source: ${d.metadata?.filename || 'doc'} ${pageLabel}\n${yearLabel}${d.pageContent}`;
-        }).join("\n\n---\n\n");
+            // ===== CAG Layer 2: Cache the retrieved context =====
+            const contextStr = finalDocs.map(d => {
+                const yearLabel = d.metadata?.year ? `[Tahun ${d.metadata.year}] ` : '';
+                const pageLabel = d.metadata?.pageNumber ? `(Page ${d.metadata.pageNumber}) ` : '';
+                return `source: ${d.metadata?.filename || 'doc'} ${pageLabel}\n${yearLabel}${d.pageContent}`;
+            }).join("\n\n---\n\n");
+
+            contextCache.set(queryHash, { context: contextStr, docs: finalDocs });
+            console.log(`💾 [CAG] Context cached for query hash: ${queryHash}`);
+        } // end of full retrieval pipeline
+
+        const context = contextFromCache 
+            ? cachedContext!.context
+            : contextCache.get(queryHash)?.context || finalDocs.map(d => {
+                const yearLabel = d.metadata?.year ? `[Tahun ${d.metadata.year}] ` : '';
+                const pageLabel = d.metadata?.pageNumber ? `(Page ${d.metadata.pageNumber}) ` : '';
+                return `source: ${d.metadata?.filename || 'doc'} ${pageLabel}\n${yearLabel}${d.pageContent}`;
+            }).join("\n\n---\n\n");
         
         // 2. Memory (Same as before)
         let conversationHistory = "";
@@ -260,6 +298,19 @@ export const askQuestionStream = async function* (question: string, sessionId?: 
             console.error("Failed to fetch doc list for context:", e);
         }
 
+        // ===== CAG Layer 1: Document Summaries (Background Knowledge) =====
+        let documentSummariesText = "";
+        try {
+            const summaries = await getAllDocumentSummaries();
+            if (summaries.length > 0) {
+                documentSummariesText = "\n\nPre-analyzed document summaries (background knowledge):\n" +
+                    summaries.map(s => `- ${s.summary} [Topics: ${s.key_topics.join(', ')}]`).join('\n');
+                console.log(`🧠 [CAG] Injected ${summaries.length} document summaries into prompt`);
+            }
+        } catch (e) {
+            console.warn('[CAG] Failed to fetch document summaries:', e);
+        }
+
         const comparisonInstruction = isComparison 
             ? `\nFORMAT TASK: The user asked for a comparison. You MUST output the data as a MARKDOWN TABLE.`
             : '';
@@ -278,6 +329,10 @@ export const askQuestionStream = async function* (question: string, sessionId?: 
     <|available_documents|>
     ${docListText}
     </|available_documents|>
+
+    <|background_knowledge|>
+    ${documentSummariesText}
+    </|background_knowledge|>
 
     <|context|>
     ${context}
@@ -304,6 +359,7 @@ export const askQuestionStream = async function* (question: string, sessionId?: 
         // 5. Stream LLM Response
         console.log(`Invoking LLM Stream...`);
         let hasContent = false;
+        let fullStreamContent = "";
   
         const stream = await client.chatCompletionStream({
             model: config.modelRepo,
@@ -319,6 +375,7 @@ export const askQuestionStream = async function* (question: string, sessionId?: 
             const content = chunk.choices[0]?.delta?.content || '';
             if (content) {
                 hasContent = true;
+                fullStreamContent += content;
                 yield JSON.stringify({ type: 'content', data: content });
             }
         }
@@ -328,6 +385,14 @@ export const askQuestionStream = async function* (question: string, sessionId?: 
              const fallback = "Maaf, saya tidak dapat memberikan jawaban saat ini (Tidak ada respon dari AI).";
              yield JSON.stringify({ type: 'content', data: fallback });
         }
+
+        // ===== CAG: Cache the full response (Layer 3) =====
+        if (hasContent && fullStreamContent) {
+            saveResponseCache(queryHash, question, fullStreamContent, sources).catch(() => {});
+        }
+
+        // Yield CAG info
+        yield JSON.stringify({ type: 'cag_info', data: { cached: false, layer: contextFromCache ? 'context' : 'none' } });
         
     } catch (error: any) {
         console.error("❌ CRITICAL ERROR in askQuestionStream:", error);

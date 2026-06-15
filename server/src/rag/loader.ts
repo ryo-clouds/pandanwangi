@@ -4,6 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { Document } from "@langchain/core/documents";
 import { config } from "../config";
+import { generateDocumentSummary } from "./summarizer";
+import { contextCache, clearResponseCache } from "./cache";
 
 // Extract year from filename
 const extractYearFromFilename = (filename: string): string | null => {
@@ -252,9 +254,45 @@ export const processPdf = async (input: string | Buffer, sourceUrl: string, orig
         });
         
         console.log(`✅ Split into ${chunks.length} chunks. Indexing...`);
-        await addDocuments(chunks);
         
-        console.log("✅ Indexing complete.");
+        // Try to index with retry logic
+        let indexingSuccess = false;
+        let retryCount = 0;
+        const MAX_RETRIES = 2;
+        
+        while (!indexingSuccess && retryCount <= MAX_RETRIES) {
+            try {
+                if (retryCount > 0) {
+                    console.log(`🔄 Retry ${retryCount}/${MAX_RETRIES}: Re-attempting indexing...`);
+                    // Add longer delay between retries
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                }
+                
+                await addDocuments(chunks);
+                indexingSuccess = true;
+                console.log("✅ Indexing complete.");
+                
+            } catch (indexError: any) {
+                retryCount++;
+                console.error(`❌ Indexing attempt ${retryCount} failed:`, indexError.message);
+                
+                if (retryCount > MAX_RETRIES) {
+                    console.error(`❌ All ${MAX_RETRIES + 1} indexing attempts failed for: ${filename}`);
+                    // Return partial success - file saved but indexing failed
+                    return {
+                        success: false,
+                        chunks: 0,
+                        pages: totalPages,
+                        year: year,
+                        docType: docType,
+                        isScanned: isLikelyScanned,
+                        message: `Indexing gagal setelah ${MAX_RETRIES + 1} percobaan. Gunakan Re-index untuk mencoba lagi.`,
+                        needsReindex: true
+                    };
+                }
+            }
+        }
+        
         return {
             success: true,
             chunks: chunks.length,
@@ -267,5 +305,24 @@ export const processPdf = async (input: string | Buffer, sourceUrl: string, orig
     } catch (error) {
         console.error("PDF Processing Error:", error);
         throw error;
+    }
+};
+
+// ============ CAG: Post-upload summary generation ============
+export const triggerSummaryGeneration = async (
+    documentId: string,
+    documentText: string,
+    filename: string
+): Promise<void> => {
+    try {
+        console.log(`🧠 [CAG] Triggering summary generation for: ${filename}`);
+        await generateDocumentSummary(documentId, documentText, filename);
+        
+        // Invalidate caches since new document knowledge is available
+        contextCache.clear();
+        await clearResponseCache();
+        console.log(`🗑️ [CAG] Caches invalidated after new document indexed`);
+    } catch (e: any) {
+        console.warn(`[CAG] Summary generation failed (non-blocking): ${e.message}`);
     }
 };

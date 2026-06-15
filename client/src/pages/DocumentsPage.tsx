@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useMemo, useCallback } from 'react';
-import { getDocuments, toggleDocument, deleteDocument, reindexDocument } from '../lib/api'; 
+import { getDocuments, toggleDocument, deleteDocument, reindexDocument, flushVectorStore } from '../lib/api'; 
 import { useToast } from '../context/ToastContext';
-import { Trash2, FileText, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Trash2, FileText, Loader2, AlertTriangle, RefreshCw, Database } from 'lucide-react';
 import clsx from 'clsx';
 import { ConfirmModal, useConfirmModal } from '../components/ConfirmModal';
 import { LoadingModal } from '../components/LoadingModal';
@@ -55,6 +55,26 @@ export default function DocumentsPage() {
           console.error(err);
       }
   });
+
+  const flushMutation = useMutation({
+      mutationFn: flushVectorStore,
+      onSuccess: (data) => {
+          queryClient.invalidateQueries({ queryKey: ['documents'] });
+          showToast(`Berhasil menghapus ${data.deleted} vector chunks`, 'success');
+      },
+      onError: () => showToast('Gagal menghapus vector store', 'error')
+  });
+
+  const handleFlushVectors = useCallback(async () => {
+    const confirmed = await confirmModal.showConfirm(
+      'Flush Vector Store',
+      'Apakah Anda yakin ingin menghapus SEMUA data vector? Ini akan menghapus semua chunk yang sudah diindeks. Tindakan ini tidak dapat dibatalkan.'
+    );
+    
+    if (confirmed) {
+      flushMutation.mutate();
+    }
+  }, [confirmModal, flushMutation]);
 
   const handleDelete = useCallback(async (id: string, filename: string) => {
     setPendingAction({ type: 'delete', id });
@@ -170,6 +190,15 @@ export default function DocumentsPage() {
                         <div className="stat-value">{documents?.length || 0}</div>
                         <div className="stat-label">Total Dokumen</div>
                     </div>
+                    <button 
+                        className="btn-flush-vectors"
+                        onClick={handleFlushVectors}
+                        disabled={flushMutation.isPending}
+                        title="Hapus semua data vector"
+                    >
+                        <Database size={18} />
+                        {flushMutation.isPending ? 'Menghapus...' : 'Flush Vectors'}
+                    </button>
                 </div>
                 
                 {/* Background Decorations */}

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3000/api';
+const API_URL = 'http://localhost:3001/api';
 const api = axios.create({
   baseURL: API_URL,
 });
@@ -118,6 +118,19 @@ export const deleteDocument = async (id: string) => {
     return res.json();
 };
 
+export const flushVectorStore = async () => {
+    const token = localStorage.getItem('admin_token');
+    if (!token) throw new Error("Unauthorized");
+
+    const res = await fetch(`${API_URL}/vectors/flush`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!res.ok) throw new Error("Flush failed");
+    return res.json();
+};
+
 export const chatWithAgent = async (message: string, sessionId?: string) => {
   return api.post<ChatResponse>('/chat', { message, sessionId }).then(res => res.data);
 };
@@ -140,4 +153,100 @@ export const getHistory = async () => {
 
 export const deleteSession = async (sessionId: string) => {
     return api.delete(`/sessions/${sessionId}`).then(res => res.data);
+};
+
+// ============ ANALYTICS ============
+
+export interface AnalyticsStats {
+    totalSessions: number;
+    totalMessages: number;
+    totalDocuments: number;
+    activeDocuments: number;
+    messagesThisWeek: number;
+    sessionsThisWeek: number;
+}
+
+export interface TopQuestion {
+    content: string;
+    count: number;
+}
+
+export interface DailyActivity {
+    date: string;
+    messages: number;
+    sessions: number;
+}
+
+export const getAnalyticsStats = async (): Promise<AnalyticsStats> => {
+    const token = localStorage.getItem('admin_token');
+    const res = await fetch(`${API_URL}/analytics/stats`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch analytics stats');
+    return res.json();
+};
+
+export const getTopQuestions = async (limit: number = 10): Promise<TopQuestion[]> => {
+    const token = localStorage.getItem('admin_token');
+    const res = await fetch(`${API_URL}/analytics/top-questions?limit=${limit}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch top questions');
+    return res.json();
+};
+
+export const getDailyActivity = async (days: number = 7): Promise<DailyActivity[]> => {
+    const token = localStorage.getItem('admin_token');
+    const res = await fetch(`${API_URL}/analytics/daily-activity?days=${days}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch daily activity');
+    return res.json();
+};
+
+export const getRecentQuestions = async (limit: number = 20): Promise<{ content: string; created_at: string }[]> => {
+    const token = localStorage.getItem('admin_token');
+    const res = await fetch(`${API_URL}/analytics/recent-questions?limit=${limit}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch recent questions');
+    return res.json();
+};
+
+// ============ CAG CACHE ============
+
+export interface CacheStats {
+    contextCache: {
+        entries: number;
+        maxEntries: number;
+        hits: number;
+        misses: number;
+        hitRate: number;
+        ttlMinutes: number;
+    };
+    responseCache: {
+        entries: number;
+        totalHits: number;
+    };
+    documentSummaries: number;
+    cagEnabled: boolean;
+}
+
+export const getCacheStats = async (): Promise<CacheStats> => {
+    const token = localStorage.getItem('admin_token');
+    const res = await fetch(`${API_URL}/cache/stats`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch cache stats');
+    return res.json();
+};
+
+export const flushCache = async (): Promise<any> => {
+    const token = localStorage.getItem('admin_token');
+    const res = await fetch(`${API_URL}/cache/flush`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to flush cache');
+    return res.json();
 };
