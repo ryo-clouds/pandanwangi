@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import { Send, Copy, ThumbsUp, ThumbsDown, Menu, User, Bot, Check, Loader2 } from 'lucide-react';
 import { getSessionMessages, createSession, chatWithAgent } from '../lib/api';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -88,8 +89,8 @@ export default function ChatArea() {
 
   const queryClient = useQueryClient();
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSend = async (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
     if (!input.trim() || thinking) return;
 
     const userMessage: Message = { id: Date.now().toString(), role: 'user', content: input };
@@ -205,7 +206,7 @@ export default function ChatArea() {
                     <div className="message-bubble">
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]} 
-                        rehypePlugins={[rehypeRaw]}
+                        rehypePlugins={[rehypeRaw, rehypeSanitize]}
                       >
                         {msg.content}
                       </ReactMarkdown>
@@ -254,13 +255,24 @@ export default function ChatArea() {
       <div className="input-area">
         <div className="input-wrapper">
             <form onSubmit={handleSend} className="input-form">
-                <input
-                    type="text"
+                <textarea
                     value={input}
-                    onChange={e => setInput(e.target.value)}
+                    onChange={e => {
+                        setInput(e.target.value);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+                    }}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSend();
+                        }
+                    }}
                     placeholder="Ajukan pertanyaan..."
                     className="chat-input"
                     disabled={thinking}
+                    rows={1}
+                    style={{ resize: 'none', overflowY: 'auto' }}
                 />
                 <button 
                     type="submit" 
@@ -271,7 +283,7 @@ export default function ChatArea() {
                 </button>
             </form>
             <div className="input-disclaimer">
-                Informasi yang dihasilkan AI mungkin perlu verifikasi lebih lanjut.
+                Informasi yang dihasilkan mengacu pada dokumen yang tersedia pada Knowlegde Base Pandanwangi. Verifikasi lagi pada dokumen asli.
             </div>
         </div>
       </div>

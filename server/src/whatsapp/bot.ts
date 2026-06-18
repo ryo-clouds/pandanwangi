@@ -14,6 +14,10 @@ import fs from 'fs';
 // Session mapping: phoneNumber -> sessionId
 const userSessions = new Map<string, string>();
 
+// Rate limiter map: phoneNumber -> { count: number, timestamp: number }
+const rateLimiter = new Map<string, { count: number, timestamp: number }>();
+const MAX_MESSAGES_PER_MINUTE = 5;
+
 // Whitelist nomor HP (opsional, kosongkan untuk allow all)
 const ALLOWED_NUMBERS = process.env.WHATSAPP_ALLOWED_NUMBERS?.split(',') || [];
 
@@ -94,6 +98,31 @@ export class WhatsAppBot {
                 // Whitelist check
                 if (ALLOWED_NUMBERS.length > 0 && !ALLOWED_NUMBERS.includes(phoneNumber)) {
                     console.log(`⚠️  Blocked message from unauthorized number: ${phoneNumber}`);
+                    return;
+                }
+                
+                // Rate Limiter Check
+                const now = Date.now();
+                const userLimit = rateLimiter.get(phoneNumber) || { count: 0, timestamp: now };
+
+                // Reset count if more than 1 minute has passed
+                if (now - userLimit.timestamp > 60000) {
+                    userLimit.count = 0;
+                    userLimit.timestamp = now;
+                }
+
+                userLimit.count += 1;
+                rateLimiter.set(phoneNumber, userLimit);
+
+                if (userLimit.count > MAX_MESSAGES_PER_MINUTE) {
+                    console.log(`⚠️  Rate limit exceeded for number: ${phoneNumber}`);
+                    if (userLimit.count === MAX_MESSAGES_PER_MINUTE + 1) {
+                        try {
+                            await this.sock?.sendMessage(msg.key.remoteJid!, { 
+                                text: '⚠️ Terlalu banyak pesan. Mohon tunggu 1 menit sebelum mengirim pesan lagi.' 
+                            });
+                        } catch (e) {}
+                    }
                     return;
                 }
                 

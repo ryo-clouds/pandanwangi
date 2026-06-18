@@ -81,7 +81,7 @@ export default function Sidebar({ className, mobileOpen, onMobileClose }: Sideba
         </div>
         <div className="brand-text">
           <span className="brand-name">PANDAN WANGI</span>
-          <span className="brand-tag">Pemerintah Daerah</span>
+          <span className="brand-tag">PEMKAB CIANJUR</span>
         </div>
         
         <button 
@@ -126,7 +126,7 @@ export default function Sidebar({ className, mobileOpen, onMobileClose }: Sideba
               {() => (
                 <>
                   <Database size={18} className="nav-icon" />
-                  <span>Upload Dokumen</span>
+                  <span>Unggah Dokumen</span>
                 </>
               )}
             </NavLink>

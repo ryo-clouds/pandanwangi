@@ -46,10 +46,9 @@ export default function RagPage() {
     <div className="rag-page">
       <div className="rag-container">
         
-        {/* Header */}
         <div className="rag-header">
-            <h1>Knowledge Base Management</h1>
-            <p>Upload PDF documents to train your AI Agent's specific knowledge.</p>
+            <h1>Manajemen Basis Pengetahuan</h1>
+            <p>Unggah dokumen PDF untuk melatih pengetahuan spesifik Asisten AI Anda.</p>
         </div>
 
         {/* Upload Card */}
@@ -59,9 +58,9 @@ export default function RagPage() {
                     <Database size={32} />
                 </div>
                 
-                <h3 className="upload-title">Add New Knowledge</h3>
+                <h3 className="upload-title">Tambah Pengetahuan Baru</h3>
                 <p className="upload-desc">
-                    Drag and drop your PDF files here, or click to browse. The system will automatically chunk and embed the content.
+                    Tarik dan lepas file PDF Anda di sini, atau klik untuk menelusuri. Sistem akan otomatis memotong dan membuat embedding konten.
                 </p>
 
                 <label className={clsx(
@@ -75,7 +74,7 @@ export default function RagPage() {
                             <Upload size={32} color={uploading ? "var(--brand-500)" : "var(--slate-400)"}/>
                         )}
                         <span className="drop-text">
-                            {uploading ? "Analyzing & Indexing..." : "Select Document"}
+                            {uploading ? "Menganalisis & Mengindeks..." : "Pilih Dokumen"}
                         </span>
                     </div>
                     <input type="file" className="hidden" accept=".pdf" onChange={handleUpload} disabled={uploading}/>
@@ -95,7 +94,7 @@ export default function RagPage() {
                     </div>
                     <div className="status-content">
                         <h4>
-                            {status === 'success' ? "Ingestion Complete" : "Ingestion Failed"}
+                            {status === 'success' ? "Proses Selesai" : "Proses Gagal"}
                         </h4>
                         <p>
                             {message}
@@ -120,19 +119,19 @@ export default function RagPage() {
             <div className="info-card">
                 <div className="info-header">
                     <FileText size={20} color="var(--slate-400)"/>
-                    <h3 className="info-title">Supported Formats</h3>
+                    <h3 className="info-title">Format Didukung</h3>
                 </div>
                 <p className="info-text">
-                    Currently supporting <strong>PDF</strong> documents. Text extraction includes layout analysis to preserve context.
+                    Saat ini hanya mendukung file PDF. Teks dan metadata akan diekstrak untuk Retrieval Augmented Generation (RAG).
                 </p>
             </div>
             <div className="info-card">
                 <div className="info-header">
                     <Database size={20} color="var(--slate-400)"/>
-                    <h3 className="info-title">Vector Storage</h3>
+                    <h3 className="info-title">Penyimpanan Vektor</h3>
                 </div>
                 <p className="info-text">
-                    Data is stored locally using <strong>HNSWLib</strong> for high-speed approximate nearest neighbor search.
+                    Dokumen akan diproses menjadi chunks berukuran 1000 karakter, dikonversi menjadi vektor embeddings (12B), dan disimpan secara lokal menggunakan HNSWLib.
                 </p>
             </div>
         </div>

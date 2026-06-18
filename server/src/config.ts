@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-  port: process.env.PORT || 3000,
+  port: process.env.PORT || 3001,
   hfToken: process.env.HF_TOKEN,
   modelRepo: "openai/gpt-oss-20b",
   vectorStorePath: "./data/vector_store",

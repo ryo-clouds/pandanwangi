@@ -20,7 +20,11 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    const secret = process.env.JWT_SECRET || 'default_secret'; // Fallback for dev
+    const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error("CRITICAL: JWT_SECRET is not set in environment variables!");
+    return res.status(500).json({ error: 'Server misconfiguration.' });
+  }
     const decoded = jwt.verify(token, secret);
     req.user = decoded;
     next();
@@ -30,6 +34,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
 };
 
 export const generateToken = (payload: any) => {
-    const secret = process.env.JWT_SECRET || 'default_secret';
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error("CRITICAL: JWT_SECRET is not set in environment variables!");
     return jwt.sign(payload, secret, { expiresIn: '24h' });
 };

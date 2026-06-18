@@ -5,8 +5,24 @@ import { getSessionMessages, getMemories } from "../lib/database";
 import { Document } from "@langchain/core/documents"; // Ensure type present
 import { hashQuery, contextCache, getResponseCache, saveResponseCache } from "./cache";
 import { getAllDocumentSummaries } from "./summarizer";
+import { encode, decode } from "gpt-tokenizer";
 
 const client = new InferenceClient(config.hfToken);
+
+// Helper untuk melimitasi token agar tidak boros/error di HuggingFace
+const limitTokens = (text: string, maxTokens: number): string => {
+    try {
+        const tokens = encode(text);
+        if (tokens.length > maxTokens) {
+            console.log(`[Tokenizer] Memotong teks dari ${tokens.length} menjadi ${maxTokens} token`);
+            return decode(tokens.slice(0, maxTokens));
+        }
+        return text;
+    } catch (e) {
+        console.error("Tokenizer error:", e);
+        return text.substring(0, maxTokens * 4); // Fallback kasar
+    }
+};
 
 // Detect if the question is a comparison query
 const isComparisonQuery = (question: string): boolean => {
@@ -25,6 +41,17 @@ const isComparisonQuery = (question: string): boolean => {
 const extractYearsFromQuestion = (question: string): string[] => {
     const yearMatches = question.match(/20\d{2}/g);
     return yearMatches ? [...new Set(yearMatches)] : [];
+};
+
+// Detect prompt injection attempts
+const isPromptInjection = (question: string): boolean => {
+    const injectionKeywords = [
+        'ignore previous', 'ignore all', 'system prompt', 'forget', 'bypass',
+        'you are now', 'instead of', 'disregard', 'override', 'jailbreak',
+        'sekarang kamu adalah', 'abaikan semua', 'prompt sistem'
+    ];
+    const lowerQ = question.toLowerCase();
+    return injectionKeywords.some(kw => lowerQ.includes(kw));
 };
 
 // Return full response (Atomic)
@@ -52,6 +79,14 @@ export const askQuestion = async (question: string, sessionId?: string): Promise
 // WhatsApp-specific function with friendly, conversational formatting
 export const askQuestionWhatsApp = async (question: string, sessionId?: string): Promise<{ answer: string, sources: any[] }> => {
     console.log(`[askQuestionWhatsApp] Starting for query: "${question}"`);
+    
+    if (isPromptInjection(question)) {
+        console.warn(`[Security] Prompt injection detected: ${question}`);
+        return { 
+            answer: "⚠️ Peringatan Keamanan: Permintaan Anda terdeteksi sebagai manipulasi sistem. Saya hanya diizinkan untuk menjawab pertanyaan seputar informasi resmi.", 
+            sources: [] 
+        };
+    }
     
     try {
         const retriever = await getHybridRetriever();
@@ -94,9 +129,12 @@ export const askQuestionWhatsApp = async (question: string, sessionId?: string):
         
         const finalDocs = [...diverseDocs, ...remainingDocs].slice(0, 10); // Fewer docs for WhatsApp
         
-        const context = finalDocs.map(d => {
+        let context = finalDocs.map(d => {
             return `[${d.metadata?.filename || 'doc'}] ${d.pageContent}`;
         }).join("\n\n");
+        
+        // Batasi token context (WhatsApp butuh respons cepat, batasi 1500 token)
+        context = limitTokens(context, 1500);
         
         // Conversation history for WhatsApp
         let conversationHistory = "";
@@ -162,6 +200,12 @@ Ingat: Kamu sedang chatting di WhatsApp, bukan bikin laporan formal!`;
 export const askQuestionStream = async function* (question: string, sessionId?: string) {
     console.log(`[askQuestionStream] Starting for query: "${question}"`);
     
+    if (isPromptInjection(question)) {
+        console.warn(`[Security] Prompt injection detected: ${question}`);
+        yield JSON.stringify({ type: 'content', data: "⚠️ Peringatan Keamanan: Permintaan Anda terdeteksi sebagai manipulasi sistem. Sistem menolak untuk merespons." });
+        return;
+    }
+
     try {
         // ===== CAG Layer 3: Response Cache Check =====
         const queryHash = hashQuery(question);
@@ -257,13 +301,16 @@ export const askQuestionStream = async function* (question: string, sessionId?: 
             console.log(`💾 [CAG] Context cached for query hash: ${queryHash}`);
         } // end of full retrieval pipeline
 
-        const context = contextFromCache 
+        let context = contextFromCache 
             ? cachedContext!.context
             : contextCache.get(queryHash)?.context || finalDocs.map(d => {
                 const yearLabel = d.metadata?.year ? `[Tahun ${d.metadata.year}] ` : '';
                 const pageLabel = d.metadata?.pageNumber ? `(Page ${d.metadata.pageNumber}) ` : '';
                 return `source: ${d.metadata?.filename || 'doc'} ${pageLabel}\n${yearLabel}${d.pageContent}`;
             }).join("\n\n---\n\n");
+            
+        // Batasi token context agar hemat token HuggingFace (limit 3000)
+        context = limitTokens(context, 3000);
         
         // 2. Memory (Same as before)
         let conversationHistory = "";

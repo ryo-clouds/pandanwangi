@@ -197,7 +197,7 @@ export default function DocumentsPage() {
                         title="Hapus semua data vector"
                     >
                         <Database size={18} />
-                        {flushMutation.isPending ? 'Menghapus...' : 'Flush Vectors'}
+                        {flushMutation.isPending ? 'Menghapus...' : 'Bersihkan Vektor'}
                     </button>
                 </div>
                 
@@ -322,7 +322,7 @@ export default function DocumentsPage() {
                                                 <FileText size={48} />
                                             </div>
                                             <h3 className="text-lg font-semibold text-slate-700 mb-1">Belum ada dokumen</h3>
-                                            <p>Silakan unggah dokumen PDF di menu Upload.</p>
+                                            <p>Silakan unggah dokumen PDF di menu Unggah Dokumen.</p>
                                         </div>
                                     </td>
                                 </tr>
