@@ -30,7 +30,8 @@
     "pdf-to-img": "^5.0.0",
     "pino": "^10.3.0",
     "qrcode-terminal": "^0.12.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -39,6 +40,7 @@
     "@types/node": "^20.10.5",
     "@types/pdf-parse": "^1.1.5",
     "@types/qrcode-terminal": "^0.12.2",
+    "@types/ws": "^8.18.1",
     "nodemon": "^3.0.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
