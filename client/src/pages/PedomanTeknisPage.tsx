@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import {
     BookOpen, ChevronDown, ChevronRight, Download,
-    Upload, MessageSquare, Database, Settings,
+    Upload, MessageSquare, Database,
     Shield, Server, Wifi, AlertCircle, CheckCircle,
-    FileText, RefreshCw, Trash2, Info, Terminal
+    FileText, RefreshCw, Info, Terminal
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────

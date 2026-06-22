@@ -91,7 +91,7 @@ const LayoutContext = createContext<LayoutContextType>({
 export const useLayout = () => useContext(LayoutContext);
 
 function AppLayout() {
-  const { isAdmin } = useAuth();
+
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   
   const toggleMobileSidebar = () => setIsMobileSidebarOpen(!isMobileSidebarOpen);
@@ -102,9 +102,7 @@ function AppLayout() {
       <div className="app-container">
         <Sidebar 
           className="hidden md-flex" 
-          isAdmin={isAdmin} 
           mobileOpen={isMobileSidebarOpen}
-          onMobileClose={closeMobileSidebar}
         />
         <div 
           className={`sidebar-overlay ${isMobileSidebarOpen ? 'mobile-open' : ''}`} 

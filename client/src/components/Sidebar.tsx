@@ -10,10 +10,9 @@ import { ConfirmModal, useConfirmModal } from './ConfirmModal';
 interface SidebarProps {
   className?: string;
   mobileOpen?: boolean;
-  onMobileClose?: () => void;
 }
 
-export default function Sidebar({ className, mobileOpen, onMobileClose }: SidebarProps) {
+export default function Sidebar({ className, mobileOpen }: SidebarProps) {
   const { isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();

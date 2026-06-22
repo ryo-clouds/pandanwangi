@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { Send, Copy, ThumbsUp, ThumbsDown, Menu, User, Bot, Check, Loader2 } from 'lucide-react';
-import { getSessionMessages, createSession, chatWithAgent } from '../lib/api';
+import { getSessionMessages, chatWithAgent } from '../lib/api';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import { useQueryClient } from '@tanstack/react-query';
