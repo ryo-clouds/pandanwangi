@@ -5,7 +5,7 @@ export const supabase = createClient(
     config.supabaseUrl,
     config.supabaseServiceKey
 );
-
+// asdlasjdlkaklsjdaslkdjalkdjaslkjlkas
 // Storage helper
 export const uploadToStorage = async (fileName: string, fileBuffer: Buffer) => {
     const { data, error } = await supabase.storage
