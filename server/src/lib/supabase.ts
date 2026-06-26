@@ -1,18 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config';
-import WebSocket from 'ws';
 
 export const supabase = createClient(
     config.supabaseUrl,
-    config.supabaseServiceKey,
-    {
-      auth: {
-        persistSession: false
-      },
-      global: {
-        WebSocket: WebSocket as any
-      }
-    }
+    config.supabaseServiceKey
 );
 
 // Storage helper
